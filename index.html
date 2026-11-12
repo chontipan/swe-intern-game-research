@@ -161,6 +161,8 @@
         <span>จำลองชีวิตเด็กฝึกงานเอสอี 16 สัปดาห์</span>
         <span>•</span>
         <span class="text-slate-500">กดแป้นตัวเลข 1-3 หรือ Enter ได้</span>
+        <span>•</span>
+        <span id="verLabel" class="text-slate-600"></span>
       </div>
       <div class="flex items-center gap-2">
         
@@ -178,6 +180,51 @@
   </div>
 
   <script>
+    // --- STUDY CONFIG (v1.3.0) — ตั้งค่าเงื่อนไขการวิจัยผ่าน URL ---
+    const STUDY_CFG = (() => {
+      const q = new URLSearchParams(location.search);
+      const study = q.has('study') || q.has('pid');
+      const pick = (k, allowed, def) => { const v = q.get(k); return allowed.includes(v) ? v : def; };
+      return {
+        version: '1.3.0',
+        study,
+        shuffle: pick('shuffle', ['on', 'off'], study ? 'on' : 'off'),      // สุ่มลำดับตัวเลือก
+        hint: pick('hint', ['full', 'text', 'off'], study ? 'text' : 'full'), // full=เดิม, text=ตัดตัวเลขค่าสถานะ, off=ซ่อน
+        src: pick('src', ['show', 'hide'], 'show'),                           // แสดงกล่องที่มางานวิจัย
+        company: q.get('company') || '',                                      // ล็อกบริษัท: startup|bigcorp|softwarehouse|gov
+        reroll: pick('reroll', ['on', 'off'], study ? 'off' : 'on')           // อนุญาตสุ่มบริษัทใหม่
+      };
+    })();
+    function clampStats(s) {
+      ['skill', 'energy', 'sanity', 'karma'].forEach(k => { s[k] = Math.max(0, Math.min(100, s[k])); });
+    }
+    function cleanHint(h) {
+      if (STUDY_CFG.hint === 'off' || !h) return '';
+      if (STUDY_CFG.hint === 'full') return h;
+      // ตัดส่วนที่เป็นตัวเลขค่าสถานะ เช่น "+12 สกิล", "-15 พลังงาน", "฿500"
+      return h.split('·').map(x => x.trim())
+        .filter(x => !/[+\-−]\s*\d+|฿\s*\d|\d+\s*(สกิล|พลัง|ความสุข|บารมี|karma|skill|energy|sanity)/i.test(x))
+        .join(' · ');
+    }
+    // ลำดับตัวเลือกที่แสดง (index เดิม) — สุ่มครั้งเดียวต่อสัปดาห์ต่อรอบเล่น
+    function choiceOrder(n) {
+      gameState.choiceOrders = gameState.choiceOrders || {};
+      const key = gameState.week;
+      let o = gameState.choiceOrders[key];
+      if (!o || o.length !== n) {
+        o = [...Array(n).keys()];
+        if (STUDY_CFG.shuffle === 'on') for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; }
+        gameState.choiceOrders[key] = o;
+      }
+      return o;
+    }
+    function choiceAtPos(pos) {
+      const scenarios = ROLE_SCENARIOS[gameState.selectedRole] || ROLE_SCENARIOS.dev;
+      const ev = scenarios[Math.min(gameState.week - 1, scenarios.length - 1)] || scenarios[0];
+      const o = choiceOrder(ev.choices.length);
+      return o[pos] !== undefined ? o[pos] : pos;
+    }
+
     // --- AUDIO SYNTH ENGINE ---
     let audioCtx = null;
     let isMuted = false;
@@ -3138,7 +3185,7 @@
 
             <!-- Secondary Actions: Reroll & Back -->
             <div class="flex items-center gap-2 pt-1">
-              <button onclick="rerollCompany()" class="flex-1 py-2.5 bg-[#16234d] hover:bg-[#1d2f66] text-[#dfbd69] border border-[#dfbd69]/40 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 shadow">
+              <button onclick="rerollCompany()" style="${(STUDY_CFG.reroll === 'off' || STUDY_CFG.company) ? 'display:none' : ''}" class="flex-1 py-2.5 bg-[#16234d] hover:bg-[#1d2f66] text-[#dfbd69] border border-[#dfbd69]/40 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 shadow">
                 <span>🎲 สุ่มบริษัทใหม่</span>
                 <span class="text-[10px] font-mono opacity-70 bg-black/30 px-1 py-0.2 rounded">R</span>
               </button>
@@ -3362,13 +3409,13 @@
               <div class="border-l-4 border-[#e5a83b] bg-[#0c1633] p-3.5 rounded-r text-xs sm:text-sm text-slate-200 leading-relaxed font-medium space-y-2.5 shadow-md">
                 <div>${ev.intro}</div>
                 <!-- Prominent In-Box Research & Pantip Citation -->
-                <div class="pt-2 border-t border-[#1a2c5a] text-[11px] font-mono flex items-start gap-1.5 text-[#dfbd69]">
+                ${STUDY_CFG.src === 'hide' ? '' : `<div class="pt-2 border-t border-[#1a2c5a] text-[11px] font-mono flex items-start gap-1.5 text-[#dfbd69]">
                   <span class="font-bold shrink-0 bg-[#e5a83b]/20 px-1.5 py-0.5 rounded border border-[#dfbd69]/40">📚 ที่มา</span>
                   <div class="text-slate-300 leading-relaxed mt-0.5">
                     <span class="font-semibold text-white">${ev.sourceRef || 'งานวิจัยสหกิจศึกษาวิศวกรรมซอฟต์แวร์ & กระทู้ Pantip'}</span>
                     ${ev.researchDetail ? `<div class="text-[10px] text-slate-300 mt-1 leading-normal pl-1.5 border-l-2 border-[#38bdf8]/60">${ev.researchDetail}</div>` : ''}
                   </div>
-                </div>
+                </div>`}
               </div>
 
               <!-- Question Title -->
@@ -3382,21 +3429,21 @@
             ${gameState.screen === 'event' ? `
               <!-- 3 Interactive Choice Cards -->
               <div class="space-y-2">
-                ${choices.map((c, idx) => `
+                ${choiceOrder(choices.length).map((idx, pos) => { const c = choices[idx]; return `
                   <button onclick="makeChoice(${idx})" class="choice-card-65m w-full text-left p-3.5 flex items-start gap-3 group">
                     <span class="w-5 h-5 text-xs font-mono font-bold text-[#00e5ff] shrink-0 mt-0.5">
-                      ${idx + 1}
+                      ${pos + 1}
                     </span>
                     <div class="flex-1">
                       <div class="text-xs sm:text-sm font-semibold text-slate-100 group-hover:text-white transition">
                         ${c.text}
                       </div>
-                      <div class="text-[11px] text-[#38bdf8] mt-1 font-mono">
-                        ${c.hint}
-                      </div>
+                      ${cleanHint(c.hint) ? `<div class="text-[11px] text-[#38bdf8] mt-1 font-mono">
+                        ${cleanHint(c.hint)}
+                      </div>` : ''}
                     </div>
                   </button>
-                `).join('')}
+                `; }).join('')}
               </div>
 
               <div class="text-[11px] text-slate-400 font-mono text-center sm:text-left">
@@ -3783,11 +3830,13 @@
 
     function rollCompanyAndShowBriefing() {
       playSound('click');
-      const randomComp = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+      const locked = COMPANIES.find(c => c.id === STUDY_CFG.company);
+      const randomComp = locked || COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
       applyCompanyAndShowBriefing(randomComp);
     }
 
     function rerollCompany() {
+      if (STUDY_CFG.reroll === 'off' || STUDY_CFG.company) return;
       playSound('select');
       const currentId = gameState.company ? gameState.company.id : '';
       const otherComps = COMPANIES.filter(c => c.id !== currentId);
@@ -3806,6 +3855,7 @@
         money: baseRole.money + (comp.bonus.money || 0)
       };
       gameState.screen = 'briefing';
+      gameState.choiceOrders = {};
       gameState.isSentBack = false;
       gameState.sentBackReason = "";
       gameState.weeklyFinancialReport = null;
@@ -3910,6 +3960,7 @@
 
       s.energy = Math.min(100, s.energy);
       s.sanity = Math.min(100, s.sanity);
+      clampStats(s); // v1.3.0: จำกัด 0–100 (เงื่อนไขแพ้ <= 0 ยังทำงานเหมือนเดิม)
 
       // 4. Save Financial Breakdown Report
       gameState.weeklyFinancialReport = {
@@ -4028,9 +4079,9 @@
           backToRoleSelect();
         }
       } else if (gameState.screen === 'event') {
-        if (e.key === '1') makeChoice(0);
-        else if (e.key === '2') makeChoice(1);
-        else if (e.key === '3') makeChoice(2);
+        if (e.key === '1') makeChoice(choiceAtPos(0));
+        else if (e.key === '2') makeChoice(choiceAtPos(1));
+        else if (e.key === '3') makeChoice(choiceAtPos(2));
       } else if (gameState.screen === 'feedback') {
         if (e.key === 'Enter' || e.key === ' ') nextWeek();
       } else if (gameState.screen === 'job_offer') {
@@ -4343,6 +4394,8 @@
   </div>
 
   <script>
+    (function () { const v = document.getElementById('verLabel'); if (v) v.textContent = 'v' + STUDY_CFG.version + (STUDY_CFG.study ? ' · study' : ''); })();
+
     function toggleResearchModal() {
       const modal = document.getElementById('researchModal');
       if (modal) modal.classList.toggle('hidden');
@@ -4353,8 +4406,8 @@
   <script>
   (function () {
     // ---- CONFIG ----
-    const GAME_VERSION = '1.2.0';
-    const LOG_VERSION = 'log-1';
+    const GAME_VERSION = STUDY_CFG.version;
+    const LOG_VERSION = 'log-2';
     // URL ของ Google Apps Script Web App (เว้นว่าง = เก็บในเครื่องอย่างเดียว) หรือส่งผ่าน ?endpoint=...
     const DEFAULT_ENDPOINT = '';
     const STORE_KEY = 'sweIntern_researchLog_v1';
@@ -4386,7 +4439,8 @@
         game_version: GAME_VERSION, log_version: LOG_VERSION, user_agent: navigator.userAgent,
         started_at: iso(now()), ended_at: null, role: null, company: null, company_rerolls: 0,
         ending_badge: null, ending_title: null, career_choice: null, final_stats: null,
-        weeks_completed: 0, events: [], choices: []
+        weeks_completed: 0, events: [], choices: [],
+        cond_shuffle: STUDY_CFG.shuffle, cond_hint: STUDY_CFG.hint, cond_src: STUDY_CFG.src, cond_company_lock: STUDY_CFG.company || ''
       };
       rerolls = 0;
       persist();
@@ -4446,7 +4500,8 @@
       const scenarios = ROLE_SCENARIOS[gameState.selectedRole] || ROLE_SCENARIOS.dev;
       const e = scenarios[Math.min(gameState.week - 1, scenarios.length - 1)] || scenarios[0];
       const c = e.choices[idx] || e.choices[0];
-      return { week: gameState.week, e, c, idx, before: snap(), rt: eventShownAt ? now() - eventShownAt : null, input: lastInput };
+      const order = choiceOrder(e.choices.length).slice();
+      return { week: gameState.week, e, c, idx, order, pos: order.indexOf(idx), before: snap(), rt: eventShownAt ? now() - eventShownAt : null, input: lastInput };
     }, (ctx) => {
       if (!ctx) return;
       if (!session) newSession();
@@ -4454,7 +4509,7 @@
       const row = {
         t: iso(now()), week: ctx.week, role: gameState.selectedRole, company: session.company,
         scenario_title: ctx.e.title, source_ref: ctx.e.sourceRef || '',
-        choice_idx: ctx.idx, choice_text: ctx.c.text,
+        choice_idx: ctx.idx, display_pos: ctx.pos, display_order: ctx.order.map(i => i + 1).join('-'), choice_text: ctx.c.text,
         choice_delta: ctx.c.stats, choice_cost: ctx.c.cost || 0,
         rt_ms: ctx.rt, input: ctx.input, feedback_ms: null,
         before: ctx.before, after: snap(), net_money: fin.netMoneyDelta,
@@ -4509,21 +4564,21 @@
     const esc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const STATS = ['skill', 'energy', 'sanity', 'karma', 'money'];
     function choicesCSV(all) {
-      const head = ['session_id', 'pid', 'group', 'attempt', 'role', 'company', 'week', 'scenario_title', 'source_ref', 'choice_idx', 'choice_text', 'rt_ms', 'feedback_ms', 'input']
+      const head = ['session_id', 'pid', 'group', 'attempt', 'role', 'company', 'week', 'scenario_title', 'source_ref', 'choice_idx', 'display_pos', 'display_order', 'choice_text', 'rt_ms', 'feedback_ms', 'input']
         .concat(STATS.map(s => s + '_before'), STATS.map(s => s + '_after'), ['net_money', 'sent_back', 'timestamp']);
       const rows = [head.join(',')];
-      all.forEach(s => s.choices.forEach(c => rows.push([s.session_id, s.pid, s.group, s.attempt, c.role, c.company, c.week, c.scenario_title, c.source_ref, c.choice_idx + 1, c.choice_text, c.rt_ms, c.feedback_ms, c.input]
+      all.forEach(s => s.choices.forEach(c => rows.push([s.session_id, s.pid, s.group, s.attempt, c.role, c.company, c.week, c.scenario_title, c.source_ref, c.choice_idx + 1, c.display_pos + 1, c.display_order, c.choice_text, c.rt_ms, c.feedback_ms, c.input]
         .concat(STATS.map(k => c.before[k]), STATS.map(k => c.after[k]), [c.net_money, c.sent_back, c.t]).map(esc).join(','))));
       return rows.join('\n');
     }
     function sessionsCSV(all) {
       const head = ['session_id', 'pid', 'group', 'attempt', 'role', 'company', 'company_rerolls', 'weeks_completed', 'ending_badge', 'career_choice', 'sent_back']
-        .concat(STATS.map(s => 'final_' + s), ['started_at', 'ended_at', 'tab_hidden_count', 'research_modal_count']);
+        .concat(STATS.map(s => 'final_' + s), ['started_at', 'ended_at', 'tab_hidden_count', 'research_modal_count', 'game_version', 'cond_shuffle', 'cond_hint', 'cond_src', 'cond_company_lock']);
       const rows = [head.join(',')];
       all.forEach(s => {
         const fs = s.final_stats || (s.choices.length ? s.choices[s.choices.length - 1].after : {});
         rows.push([s.session_id, s.pid, s.group, s.attempt, s.role, s.company, s.company_rerolls, s.weeks_completed, s.ending_badge || 'INCOMPLETE', s.career_choice, s.sent_back]
-          .concat(STATS.map(k => fs[k]), [s.started_at, s.ended_at, s.events.filter(e => e.type === 'tab_hidden').length, s.events.filter(e => e.type === 'research_modal').length]).map(esc).join(','));
+          .concat(STATS.map(k => fs[k]), [s.started_at, s.ended_at, s.events.filter(e => e.type === 'tab_hidden').length, s.events.filter(e => e.type === 'research_modal').length, s.game_version, s.cond_shuffle, s.cond_hint, s.cond_src, s.cond_company_lock]).map(esc).join(','));
       });
       return rows.join('\n');
     }

@@ -17,18 +17,21 @@ function doPost(e) {
 
     upsert(sheet(ss, 'sessions', ['session_id', 'pid', 'group', 'attempt', 'role', 'company', 'company_rerolls',
       'weeks_completed', 'ending_badge', 'career_choice', 'sent_back', ...STATS.map(k => 'final_' + k),
-      'started_at', 'ended_at', 'partial', 'tab_hidden_count', 'research_modal_count', 'game_version', 'user_agent']),
+      'started_at', 'ended_at', 'partial', 'tab_hidden_count', 'research_modal_count', 'game_version', 'user_agent',
+      'cond_shuffle', 'cond_hint', 'cond_src', 'cond_company_lock']),
       s.session_id, [[s.session_id, s.pid, s.group, s.attempt, s.role, s.company, s.company_rerolls,
         s.weeks_completed, s.ending_badge || 'INCOMPLETE', s.career_choice, s.sent_back, ...STATS.map(k => fs[k]),
         s.started_at, s.ended_at, !!s.partial,
         s.events.filter(x => x.type === 'tab_hidden').length,
-        s.events.filter(x => x.type === 'research_modal').length, s.game_version, s.user_agent]]);
+        s.events.filter(x => x.type === 'research_modal').length, s.game_version, s.user_agent,
+        s.cond_shuffle, s.cond_hint, s.cond_src, s.cond_company_lock]]);
 
     upsert(sheet(ss, 'choices', ['session_id', 'pid', 'group', 'attempt', 'role', 'company', 'week', 'scenario_title',
-      'source_ref', 'choice_idx', 'choice_text', 'rt_ms', 'feedback_ms', 'input', ...STATS.map(k => k + '_before'),
+      'source_ref', 'choice_idx', 'display_pos', 'display_order', 'choice_text', 'rt_ms', 'feedback_ms', 'input', ...STATS.map(k => k + '_before'),
       ...STATS.map(k => k + '_after'), 'net_money', 'sent_back', 'timestamp']),
       s.session_id, s.choices.map(c => [s.session_id, s.pid, s.group, s.attempt, c.role, c.company, c.week,
-        c.scenario_title, c.source_ref, c.choice_idx + 1, c.choice_text, c.rt_ms, c.feedback_ms, c.input,
+        c.scenario_title, c.source_ref, c.choice_idx + 1,
+        c.display_pos == null ? '' : c.display_pos + 1, c.display_order || '', c.choice_text, c.rt_ms, c.feedback_ms, c.input,
         ...STATS.map(k => c.before[k]), ...STATS.map(k => c.after[k]), c.net_money, c.sent_back, c.t]));
 
     return ContentService.createTextOutput('ok');
